@@ -61,4 +61,8 @@ CMD+=( "$@" )
 # debug: uncomment if you want to see the full command echoed
 # echo ">> ${CMD[*]}"
 
-PYTHONPATH="$PYTHONPATH:$ROOT" "${CMD[@]}"
+# ensure PYTHONPATH is defined even if empty
+export PYTHONPATH="${PYTHONPATH:-}"
+export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$ROOT"
+
+exec "${CMD[@]}"
