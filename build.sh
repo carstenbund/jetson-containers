@@ -1,42 +1,64 @@
 #!/usr/bin/env bash
 # launcher for jetson_containers/build.py (see docs/build.md)
+
+set -euo pipefail
+
 ROOT="$(dirname "$(readlink -f "$0")")"
 VENV="$ROOT/venv"
 
+# always run from repo root
+cd "$ROOT"
+
+# load venv if present
 if [ -d "$VENV" ]; then
-  source "$VENV/bin/activate"
+  . "$VENV/bin/activate"
 fi
 
-# Load environment variables from .env and .env.local
+# load env files if present
 for envfile in .env .env.local; do
   if [ -f "$envfile" ]; then
     set -a
-    source "$envfile"
+    . "$envfile"
     set +a
   fi
 done
 
-BUILD_ARGS=""
+# collect build args into a single comma-separated string
+BUILD_ARGS_LIST=()
 add_build_arg() {
-  local var="$1"
-  local val="${!var}"
-  if [ -n "$val" ]; then
-    [ -n "$BUILD_ARGS" ] && BUILD_ARGS+="," 
-    BUILD_ARGS+="$var:$val"
+  local k="$1"
+  local v="${!k:-}"
+  if [ -n "$v" ]; then
+    BUILD_ARGS_LIST+=("${k}:${v}")
   fi
 }
 
-for var in L4T_TAG UBUNTU_VERSION CUDA_VERSION CUDA_TAG PYTHON_VERSION PIP_INDEX_URL PIP_EXTRA_INDEX_URL; do
-  add_build_arg $var
+for k in L4T_TAG UBUNTU_VERSION CUDA_VERSION CUDA_TAG PYTHON_VERSION PIP_INDEX_URL PIP_EXTRA_INDEX_URL; do
+  add_build_arg "$k"
 done
 
-CMD=(python3 -m jetson_containers.build)
-if [ -n "$BUILD_ARGS" ]; then
-  CMD+=(--build-args "$BUILD_ARGS")
+BUILD_ARGS_STR=""
+if [ "${#BUILD_ARGS_LIST[@]}" -gt 0 ]; then
+  BUILD_ARGS_STR="$(printf '%s,' "${BUILD_ARGS_LIST[@]}")"
+  BUILD_ARGS_STR="${BUILD_ARGS_STR%,}"   # trim trailing comma
 fi
-if [ -n "$DOCKER_BUILD_ARGS" ]; then
-  CMD+=(--build-flags "$DOCKER_BUILD_ARGS")
+
+# compose python command
+CMD=( python3 -m jetson_containers.build )
+
+if [ -n "$BUILD_ARGS_STR" ]; then
+  CMD+=( --build-args "$BUILD_ARGS_STR" )
 fi
-CMD+=("$@")
+
+# only add --build-flags if provided
+if [ -n "${DOCKER_BUILD_ARGS:-}" ]; then
+  CMD+=( --build-flags "$DOCKER_BUILD_ARGS" )
+fi
+
+# pass through positional package args (e.g., "ollama")
+CMD+=( "$@" )
+
+# debug: uncomment if you want to see the full command echoed
+# echo ">> ${CMD[*]}"
 
 PYTHONPATH="$PYTHONPATH:$ROOT" "${CMD[@]}"
